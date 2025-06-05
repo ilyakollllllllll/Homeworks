@@ -1,6 +1,7 @@
-Задача 1
+# **Задача 1**
 Начальный SQL код работающий за 70 секунд выглядит следующим образом
 
+```
 SQL:
 SELECT
     o.order_id,
@@ -25,9 +26,12 @@ WHERE o.created_at::date = CURRENT_DATE - 1
 GROUP BY
     o.order_id, o.customer_id, r.total_refund, c.iso_code
 ORDER BY gross_sales DESC;
+```
 
 Спросим llm, какие проблемы она видит в этом запросе
-Промпт:
+
+## **Промпт 1**
+```
 Given a SQL query which works for too long. It contains bottlenecks, and generally is poor optimised.
 Your task is:
 1. Identify bottlenecks
@@ -58,8 +62,10 @@ WHERE o.created_at::date = CURRENT_DATE - 1
 GROUP BY
     o.order_id, o.customer_id, r.total_refund, c.iso_code
 ORDER BY gross_sales DESC;
+```
 
-Ответ:
+### **Ответ**
+
 The original SQL query suffers from performance issues primarily due to non-sargable expressions in `WHERE` clauses and the use of a subquery in a `JOIN` that also contains such an expression. Optimizing this involves rewriting these conditions to be index-friendly and restructuring the query, for instance, by using a Common Table Expression (CTE).
 
 ## 1. Identified Bottlenecks
@@ -157,16 +163,21 @@ CREATE INDEX IF NOT EXISTS idx_refunds_order_id_created_at ON refunds (order_id,
 ```
 Ensure primary keys (`orders.order_id`, `order_items.order_item_id` (if exists), `refunds.refund_id` (if exists), `currencies.currency_id`) are also indexed, which is typically done automatically. Regularly analyze query performance (e.g., using `EXPLAIN ANALYZE`) to confirm that indexes are being used as expected.
 
+
+## **Анализиз ответов**
 И так, из изначальных проблем он обнаружил 2 запроса (основной и подзапрос с join), остальные 2 join и spill risk за проблему он не посчитал, и, на самом деле, мы ничего от этого не потеряли, так как оставшиеся 2 hash джоина с точки зрения запроса упростить нельзя, а Spill Risk всегда само собой разумеющееся + сам риск скорее отражает уже имеющееся проблемы оптимизации запроса, а не является отдельной проблемой в данном случае. Считаю, что с нахождением проблемных мест LLM справилась на 8\10.
 
 Из оптимизаций он предложил индексироване и включил в индексы все ключевые колонки, вынес подзапрос в CTE и избавился от каста индексированной колонки. Тем не менее, все еще можно применить оконную функцию + добавить фильтр status='FULFILLED'. Укажем LLM на это в нашем следующем запросе:
 
+## **Промпт 2**
+```
 Your answer still miss some optimisations:
 1. Rewrite with window functions to remove the self-aggregating sub-query.
 2. Filter early by moving status='FULFILLED' and the date predicate into CTEs.
 3. Include this status filter to the indexing
+```
 
-Получили такой ответ:
+### **Ответ**
 
 You're right to push for even more fine-grained optimizations! The previous suggestions focused on the most common and impactful issues. Let's incorporate your advanced points: using window functions for refunds, filtering earlier with more CTEs, and refining indexing for status-based filters.
 
@@ -316,6 +327,8 @@ To support this more granular CTE structure:
 
 These advanced strategies and specialized indexing should lead to significant performance improvements, especially on large datasets, by minimizing data movement and enabling more efficient data access patterns. Always test with `EXPLAIN ANALYZE` (or your RDBMS equivalent) to verify the effectiveness of these changes.
 
+
+## **Итог**
 Теперь, когда ответ выглядит полным, мы получили готовый SQL запрос + набор необходимых индексов. Итоговый вариант можно посмотреть в файле subtask1_llm.sql
 
 
@@ -323,16 +336,9 @@ These advanced strategies and specialized indexing should lead to significant pe
 Результат до и после "Rewrite to use a single window-function to pass over order_items (partition by order_id) and JOIN that result to orders. Eliminate the refunds sub-query by turning it into a window sum on refunds with a FILTER clause. Add EXPLAIN ANALYZE before and after." будет в файле subtask1_cursor.sql
 
 
-
-
-
-
-
-
-
-Задача 2
+# **Задача 2**
 Для начала выполним скрипт инциализации из условия:
-
+```
 CREATE TABLE orders (
     id INTEGER PRIMARY KEY,
     customer TEXT,
@@ -349,9 +355,10 @@ INSERT INTO orders (customer, amount, order_date) VALUES
 ('Bob', 4000, '2024-02-10'),
 ('Charlie', 9000, '2024-03-22'),
 ('Alice', 2000, '2024-03-30');
+```
 
-Далее отправим следующий промпт в LLM:
-"
+## **Промпт 1**
+```
 Solve the tasks
 
 Input Data (Script to Populate the Table):
@@ -405,10 +412,11 @@ Find the customer who spent the most overall.
 
 
 Calculate the average order value for the last three months.
-"
+```
 
 
 Ответ, если честно, шокировал:
+### **Ответ**
 Here are the solutions to your tasks:
 
 ## March 2024 Sales Volume
@@ -426,35 +434,13 @@ The customer who spent the most overall is **Alice**, with a total spending of *
 The average order value for the last three months (January, February, and March 2024, based on the provided data) is **$6,000**. This is calculated by dividing the total amount of all orders by the total number of orders.
 
 
+## **Анализ ответа**
 LLM нам просто выдала правильные ответы на поставленные вопросы, но так не интересно, поэтому следующим промптом попросим ее написать sql код
-Промпт:
+## **Промпт 2**
 Write a sql code to calculate this
 
 Ответ (код):
--- Create the orders table (if it doesn't exist)
-CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY,
-    customer TEXT,
-    amount REAL,
-    order_date DATE
-);
-
--- Insert sample data (if the table is empty)
--- Note: In a real scenario, you'd check if this data already exists
--- or handle potential primary key conflicts if re-running.
--- For this example, we assume it's run on a fresh table or a table
--- where these specific IDs don't yet exist.
-INSERT INTO orders (id, customer, amount, order_date) VALUES
-(1, 'Alice', 5000, '2024-03-01'),
-(2, 'Bob', 8000, '2024-03-05'),
-(3, 'Alice', 3000, '2024-03-15'),
-(4, 'Charlie', 7000, '2024-02-20'),
-(5, 'Alice', 10000, '2024-02-28'),
-(6, 'Bob', 4000, '2024-02-10'),
-(7, 'Charlie', 9000, '2024-03-22'),
-(8, 'Alice', 2000, '2024-03-30')
-ON CONFLICT(id) DO NOTHING; -- Prevents errors if data is re-inserted
-
+```
 -- Task 1: Calculate the total sales volume for March 2024.
 SELECT
     SUM(amount) AS total_sales_march_2024
@@ -506,7 +492,8 @@ WHERE
     (STRFTIME('%Y-%m', order_date) = '2024-03') OR
     (STRFTIME('%Y-%m', order_date) = '2024-02') OR
     (STRFTIME('%Y-%m', order_date) = '2024-01');
+```
 
-
+## **Итог**
 Получилось совсем неинтересно - данные SQL запросы просто выдают правильные ответы.
 
