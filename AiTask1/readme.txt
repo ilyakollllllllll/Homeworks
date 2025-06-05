@@ -322,3 +322,191 @@ These advanced strategies and specialized indexing should lead to significant pe
 Теперь попрбоуем с Cursor
 Результат до и после "Rewrite to use a single window-function to pass over order_items (partition by order_id) and JOIN that result to orders. Eliminate the refunds sub-query by turning it into a window sum on refunds with a FILTER clause. Add EXPLAIN ANALYZE before and after." будет в файле subtask1_cursor.sql
 
+
+
+
+
+
+
+
+
+Задача 2
+Для начала выполним скрипт инциализации из условия:
+
+CREATE TABLE orders (
+    id INTEGER PRIMARY KEY,
+    customer TEXT,
+    amount REAL,
+    order_date DATE
+);
+
+INSERT INTO orders (customer, amount, order_date) VALUES
+('Alice', 5000, '2024-03-01'),
+('Bob', 8000, '2024-03-05'),
+('Alice', 3000, '2024-03-15'),
+('Charlie', 7000, '2024-02-20'),
+('Alice', 10000, '2024-02-28'),
+('Bob', 4000, '2024-02-10'),
+('Charlie', 9000, '2024-03-22'),
+('Alice', 2000, '2024-03-30');
+
+Далее отправим следующий промпт в LLM:
+"
+Solve the tasks
+
+Input Data (Script to Populate the Table):
+
+Run this script in SQLite Online:
+
+
+
+CREATE TABLE orders (
+
+    id INTEGER PRIMARY KEY,
+
+    customer TEXT,
+
+    amount REAL,
+
+    order_date DATE
+
+);
+
+
+
+INSERT INTO orders (customer, amount, order_date) VALUES
+
+('Alice', 5000, '2024-03-01'),
+
+('Bob', 8000, '2024-03-05'),
+
+('Alice', 3000, '2024-03-15'),
+
+('Charlie', 7000, '2024-02-20'),
+
+('Alice', 10000, '2024-02-28'),
+
+('Bob', 4000, '2024-02-10'),
+
+('Charlie', 9000, '2024-03-22'),
+
+('Alice', 2000, '2024-03-30');
+
+
+
+Tasks:
+
+Calculate the total sales volume for March 2024.
+
+
+
+Find the customer who spent the most overall.
+
+
+
+Calculate the average order value for the last three months.
+"
+
+
+Ответ, если честно, шокировал:
+Here are the solutions to your tasks:
+
+## March 2024 Sales Volume
+
+The total sales volume for March 2024 is **$27,000**. This is calculated by summing the amounts of all orders placed in March 2024.
+
+---
+## Top Spending Customer
+
+The customer who spent the most overall is **Alice**, with a total spending of **$20,000**.
+
+---
+## Average Order Value (Last Three Months)
+
+The average order value for the last three months (January, February, and March 2024, based on the provided data) is **$6,000**. This is calculated by dividing the total amount of all orders by the total number of orders.
+
+
+LLM нам просто выдала правильные ответы на поставленные вопросы, но так не интересно, поэтому следующим промптом попросим ее написать sql код
+Промпт:
+Write a sql code to calculate this
+
+Ответ (код):
+-- Create the orders table (if it doesn't exist)
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY,
+    customer TEXT,
+    amount REAL,
+    order_date DATE
+);
+
+-- Insert sample data (if the table is empty)
+-- Note: In a real scenario, you'd check if this data already exists
+-- or handle potential primary key conflicts if re-running.
+-- For this example, we assume it's run on a fresh table or a table
+-- where these specific IDs don't yet exist.
+INSERT INTO orders (id, customer, amount, order_date) VALUES
+(1, 'Alice', 5000, '2024-03-01'),
+(2, 'Bob', 8000, '2024-03-05'),
+(3, 'Alice', 3000, '2024-03-15'),
+(4, 'Charlie', 7000, '2024-02-20'),
+(5, 'Alice', 10000, '2024-02-28'),
+(6, 'Bob', 4000, '2024-02-10'),
+(7, 'Charlie', 9000, '2024-03-22'),
+(8, 'Alice', 2000, '2024-03-30')
+ON CONFLICT(id) DO NOTHING; -- Prevents errors if data is re-inserted
+
+-- Task 1: Calculate the total sales volume for March 2024.
+SELECT
+    SUM(amount) AS total_sales_march_2024
+FROM
+    orders
+WHERE
+    order_date >= '2024-03-01' AND order_date <= '2024-03-31';
+
+-- Task 2: Find the customer who spent the most overall.
+SELECT
+    customer,
+    SUM(amount) AS total_spent
+FROM
+    orders
+GROUP BY
+    customer
+ORDER BY
+    total_spent DESC
+LIMIT 1;
+
+-- Task 3: Calculate the average order value for the last three months.
+-- Based on the provided data, the relevant months are February and March 2024.
+-- If January data existed, the condition would be order_date >= '2024-01-01'.
+SELECT
+    AVG(amount) AS average_order_value_last_months
+FROM
+    orders
+WHERE
+    order_date >= '2024-01-01' AND order_date <= '2024-03-31';
+    -- The original data only has Feb and Mar, so effectively '2024-02-01' to '2024-03-31'
+    -- Using '2024-01-01' makes the query robust if January data were added.
+
+-- For a more precise "last three months" if the data spanned more,
+-- and assuming '2024-03-31' is the "current" reference point for "last three months":
+SELECT
+    AVG(amount) AS average_order_value_feb_mar_2024
+FROM
+    orders
+WHERE
+    order_date >= DATE('2024-03-31', '-3 months') AND order_date <= '2024-03-31';
+-- SQLite's date functions might need specific handling for 'start of month' logic
+-- if you need exactly Jan, Feb, Mar.
+-- A simpler approach given the data:
+SELECT
+    AVG(amount) AS average_order_value_feb_mar_2024_specific
+FROM
+    orders
+WHERE
+    (STRFTIME('%Y-%m', order_date) = '2024-03') OR
+    (STRFTIME('%Y-%m', order_date) = '2024-02') OR
+    (STRFTIME('%Y-%m', order_date) = '2024-01');
+
+
+Получилось совсем неинтересно - данные SQL запросы просто выдают правильные ответы.
+
